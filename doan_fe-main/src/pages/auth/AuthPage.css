@@ -1,0 +1,106 @@
+/* AuthPage.css - Custom styles cho giao diện auth LMS */
+.auth-wrapper {
+  background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.5)), 
+              url('https://trangtuyensinh.com.vn/wp-content/uploads/2022/02/truong-dai-hoc-su-pham-ky-thuat-hung-yen-trang-tuyen-sinh.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.auth-card {
+  backdrop-filter: blur(2px);
+  border-radius: 28px !important;
+}
+
+/* Customize Ant Design Tabs */
+.auth-tabs .ant-tabs-nav {
+  margin-bottom: 24px;
+}
+
+.auth-tabs .ant-tabs-nav::before {
+  border-bottom-color: #e2e8f0;
+}
+
+.auth-tabs .ant-tabs-ink-bar {
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  height: 3px;
+  border-radius: 4px;
+}
+
+.auth-tabs .ant-tabs-tab {
+  padding: 8px 0;
+}
+
+.auth-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #1e3a8a !important;
+  font-weight: 600;
+}
+
+.auth-tabs .ant-tabs-tab-btn {
+  font-size: 1rem;
+  transition: color 0.2s;
+}
+
+.auth-tabs .ant-tabs-tab:hover {
+  color: #3b82f6;
+}
+
+/* Customize Form */
+.auth-form .ant-form-item-label > label {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 0.875rem;
+}
+
+.auth-form .ant-input,
+.auth-form .ant-input-password {
+  border-radius: 12px;
+  border-color: #e2e8f0;
+  padding: 8px 12px;
+  transition: all 0.2s;
+}
+
+.auth-form .ant-input:hover,
+.auth-form .ant-input-password:hover {
+  border-color: #93c5fd;
+}
+
+.auth-form .ant-input:focus,
+.auth-form .ant-input-password:focus,
+.auth-form .ant-input-affix-wrapper-focused {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Custom Button */
+.ant-btn-primary {
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.ant-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .auth-wrapper {
+    padding: 1rem;
+  }
+  
+  .auth-card {
+    margin: 0;
+  }
+  
+  .auth-tabs .ant-tabs-nav-list {
+    width: 100%;
+    justify-content: space-around;
+  }
+  
+  .auth-tabs .ant-tabs-tab {
+    flex: 1;
+    text-align: center;
+  }
+}

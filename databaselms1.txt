@@ -1,0 +1,1485 @@
+
+--- Tài khoản (cùng mật khẩu) ---
+  Admin:      admin.demo@lms.local
+  Giảng viên: giangvien.demo@lms.local
+  Sinh viên:  sinhvien.demo@lms.local
+  Mật khẩu:    Demo@123
+--- Khóa học ---
+  Published: demo-course-web-fe / slug demo-lap-trinh-web-co-ban
+  Draft:     demo-course-sql-be / slug demo-postgresql-co-ban
+
+create table users (
+    id varchar(100) primary key,
+    code_unique varchar(100) unique ,
+    email varchar(200) unique not null ,
+    password_hash varchar(300),
+    first_name varchar(100),
+    last_name varchar(100),
+    avatar_url varchar(500),
+    dob date,
+    bio varchar(500),
+    status varchar(100),
+    email_verified boolean,
+    created_at timestamptz default now(),
+    updated_at timestamptz default now()
+);
+
+create table roles(
+    id varchar(100) primary key,
+    role_name varchar(200),
+    description varchar(500)
+);
+
+
+create table permissions(
+    id varchar(100) primary key,
+    permission_code varchar(300),
+    description varchar(500)
+);
+
+create table role_permissions(
+    role_id varchar(100) references roles(id) on update cascade on delete cascade,
+    permission_id varchar(100) references permissions(id) on update cascade on delete cascade,
+    primary key (role_id, permission_id)
+
+);
+
+create table user_roles(
+    user_id varchar(100) references users(id) on update cascade on delete cascade ,
+    role_id varchar(100) references roles(id) on update cascade on delete cascade ,
+    primary key (user_id, role_id)
+);
+
+
+create table sessions(
+    id varchar(100) primary key ,
+    user_id varchar(100) references users(id) on update cascade ,
+    refresh_token_hash varchar(500),
+    device_info text,
+    ip_address varchar(100),
+    expires_at timestamptz,
+    created_at timestamptz default now(),
+    revoked_at timestamptz
+);
+
+
+CREATE TABLE major (
+    id varchar(100) primary key ,
+    name VARCHAR(255) NOT NULL,
+    description VARCHAR(255),
+    created_at timestamptz DEFAULT NOW()
+);
+
+select * from major;
+
+CREATE TABLE categories (
+    id varchar(100) primary key ,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE,
+    description varchar(255),
+    created_at timestamptz DEFAULT NOW()
+);
+
+
+CREATE TABLE courses (
+    id varchar(100) PRIMARY KEY ,
+
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE,
+
+    description TEXT,
+    thumbnail_url TEXT,
+
+    instructor_id varchar(100) REFERENCES users(id),
+
+    level VARCHAR(20), -- beginner/intermediate/advanced
+    price NUMERIC(10,2) DEFAULT 0,
+
+    status VARCHAR(20) DEFAULT 'draft',
+
+    published_at timestamptz,
+    duration numeric(8, 2),
+
+    created_at timestamptz DEFAULT NOW(),
+    updated_at timestamptz DEFAULT NOW()
+);
+
+
+CREATE TABLE course_majors (
+    course_id varchar(100) REFERENCES courses(id) ON DELETE CASCADE,
+    major_id varchar(100) REFERENCES major(id) ON DELETE CASCADE,
+    PRIMARY KEY (course_id, major_id)
+);
+
+CREATE TABLE course_categories (
+    course_id varchar(100) REFERENCES courses(id) ON DELETE CASCADE,
+    category_id varchar(100) REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY(course_id, category_id)
+);
+
+CREATE TABLE sections (
+    id varchar(100) PRIMARY KEY,
+    course_id varchar(100) REFERENCES courses(id) ON DELETE CASCADE,
+
+    title VARCHAR(255),
+    position INT ,
+
+    created_at timestamptz DEFAULT NOW(),
+    unique (course_id)
+);
+
+CREATE TYPE lesson_type AS ENUM ('video', 'docs', 'quiz', 'exam');
+
+CREATE TABLE lessons (
+    id varchar(100) PRIMARY KEY,
+    section_id varchar(100) REFERENCES sections(id) ON DELETE CASCADE,
+    title VARCHAR(255),
+    description TEXT,
+    lesson_type lesson_type not null ,  -- 'video', 'quiz', 'docs', 'exam'
+    video_url TEXT,                           -- chỉ dùng cho type = 'video'
+    video_duration INT,                       -- chỉ dùng cho type = 'video'
+    content_json JSONB,                       -- dùng cho quiz, docs, exam
+    position INT,
+    is_preview BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+
+CREATE TABLE course_enrollments (
+    id varchar(100) PRIMARY KEY,
+    user_id varchar(100) REFERENCES users(id) ON DELETE CASCADE,
+    course_id varchar(100) REFERENCES courses(id) ON DELETE CASCADE,
+    enrolled_at timestamptz DEFAULT NOW(),
+    completed_at timestamptz,
+    progress_percent numeric(5,2) DEFAULT 0,
+    UNIQUE(user_id, course_id)
+);
+
+CREATE TABLE lesson_progress (
+    id varchar(100) PRIMARY KEY,
+    user_id varchar(100) REFERENCES users(id) ON DELETE CASCADE,
+    lesson_id varchar(100) REFERENCES lessons(id) ON DELETE CASCADE,
+    progress_percent numeric(5,2) DEFAULT 0,
+    is_completed boolean DEFAULT false,
+    updated_at timestamptz DEFAULT NOW(),
+    UNIQUE(user_id, lesson_id)
+);
+
+-- Bảng user_quiz_attempts (lưu kết quả làm quiz/exam)
+CREATE TABLE user_quiz_attempts (
+    id varchar(100) PRIMARY KEY,
+    user_id varchar(100) REFERENCES users(id) ON DELETE CASCADE,
+    lesson_id varchar(100) REFERENCES lessons(id) ON DELETE CASCADE,
+    score int,
+    max_score int,
+    passed boolean,
+    answers jsonb,
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz DEFAULT NOW(),
+    UNIQUE(user_id, lesson_id)
+);
+
+
+CREATE OR REPLACE FUNCTION fn_get_user_by_email(
+    p_email varchar
+)
+RETURNS TABLE (
+    id varchar,
+    email varchar,
+    password_hash varchar,
+    status varchar,
+    email_verified boolean,
+    roles text[]
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        u.id,
+        u.email,
+        u.password_hash,
+        u.status,
+        u.email_verified,
+        COALESCE(array_agg(r.role_name)::text[], '{}'::text[]) AS roles
+    FROM users u
+    LEFT JOIN user_roles ur ON ur.user_id = u.id
+    LEFT JOIN roles r ON r.id = ur.role_id
+    WHERE u.email = p_email
+    GROUP BY u.id;
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION fn_get_user_profile(
+    p_user_id varchar
+)
+RETURNS TABLE (
+    id varchar,
+    code_unique varchar,
+    email varchar,
+    first_name varchar,
+    last_name varchar,
+    avatar_url varchar,
+    dob date,
+    bio varchar,
+    status varchar,
+    email_verified boolean
+)
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        id, email, first_name, last_name, avatar_url
+    FROM users
+    WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION auth_register_user(
+    p_user_id varchar,
+    p_code_unique VARCHAR,
+    p_email TEXT,
+    p_password_hash TEXT,
+    p_first_name TEXT,
+    p_last_name TEXT,
+    p_role_id VARCHAR
+)
+RETURNS TABLE(
+    user_id VARCHAR,
+    code_unique VARCHAR,
+    email TEXT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    -- check email
+    IF EXISTS (
+        SELECT 1 FROM users u WHERE u.email = p_email
+    ) THEN
+        RAISE EXCEPTION 'EMAIL_ALREADY_EXISTS';
+    END IF;
+
+    -- insert user
+    INSERT INTO users(
+        id,
+        code_unique,
+        email,
+        password_hash,
+        first_name,
+        last_name,
+        status,
+        email_verified
+    )
+    VALUES(
+        p_user_id,
+        p_code_unique,
+        p_email,
+        p_password_hash,
+        p_first_name,
+        p_last_name,
+        'active',
+        false
+    );
+
+    -- assign role
+    INSERT INTO user_roles(user_id, role_id)
+    VALUES (p_user_id, p_role_id);
+
+    RETURN QUERY
+    SELECT p_user_id, p_code_unique, p_email;
+
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION fn_create_session(
+    p_session_id varchar,
+    p_user_id varchar,
+    p_refresh_token_hash varchar,
+    p_device_info text,
+    p_ip_address varchar,
+    p_expires_at timestamptz
+)
+RETURNS void
+AS $$
+BEGIN
+    INSERT INTO sessions(
+        id,
+        user_id,
+        refresh_token_hash,
+        device_info,
+        ip_address,
+        expires_at
+    )
+    VALUES (
+        p_session_id,
+        p_user_id,
+        p_refresh_token_hash,
+        p_device_info,
+        p_ip_address,
+        p_expires_at
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_get_session_by_refresh_token(
+    p_refresh_token_hash varchar
+)
+RETURNS TABLE (
+    id varchar,
+    user_id varchar,
+    expires_at timestamptz,
+    revoked_at timestamptz
+)
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        s.id,
+        s.user_id,
+        s.expires_at,
+        s.revoked_at
+    FROM sessions s
+    WHERE refresh_token_hash = p_refresh_token_hash;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_rotate_refresh_token(
+    p_session_id varchar,
+    p_new_refresh_hash varchar,
+    p_new_exp timestamptz
+)
+RETURNS void
+AS $$
+BEGIN
+    UPDATE sessions
+    SET
+        refresh_token_hash = p_new_refresh_hash,
+        expires_at = p_new_exp
+    WHERE id = p_session_id
+      AND revoked_at IS NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_revoke_session(
+    p_session_id varchar
+)
+RETURNS void
+AS $$
+BEGIN
+    UPDATE sessions
+    SET revoked_at = NOW()
+    WHERE id = p_session_id;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_revoke_all_sessions(
+    p_user_id varchar
+)
+RETURNS void
+AS $$
+BEGIN
+    UPDATE sessions
+    SET revoked_at = NOW()
+    WHERE user_id = p_user_id
+      AND revoked_at IS NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_get_user_roles(
+    p_user_id varchar
+)
+RETURNS TABLE(role_name varchar)
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT r.role_name
+    FROM roles r
+    JOIN user_roles ur ON ur.role_id = r.id
+    WHERE ur.user_id = p_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_get_user_permissions(
+    p_user_id varchar
+)
+RETURNS TABLE(permission_code varchar)
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.permission_code
+    FROM permissions p
+    JOIN role_permissions rp ON rp.permission_id = p.id
+    JOIN user_roles ur ON ur.role_id = rp.role_id
+    WHERE ur.user_id = p_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION fn_create_role(
+    p_role_id varchar,
+    p_role_name varchar,
+    p_description varchar
+)
+RETURNS TABLE(
+    role_id varchar,
+    role_name varchar
+)
+LANGUAGE plpgsql
+AS $$
+
+BEGIN
+
+    IF EXISTS (
+        SELECT 1 FROM roles r WHERE r.role_name = p_role_name
+    ) THEN
+        RAISE EXCEPTION 'ROLE_ALREADY_EXISTS';
+    END IF;
+
+
+    INSERT INTO roles(id, role_name, description)
+    VALUES (p_role_id, p_role_name, p_description);
+
+    RETURN QUERY
+    SELECT p_role_id, p_role_name;
+
+END;
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION fn_update_role(
+    p_role_id varchar,
+    p_role_name varchar,
+    p_description varchar
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE roles
+    SET
+        role_name = p_role_name,
+        description = p_description
+    WHERE id = p_role_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_delete_role(
+    p_role_id varchar
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_count int;
+BEGIN
+
+    -- 1️⃣ check role tồn tại
+    IF NOT EXISTS (
+        SELECT 1 FROM roles WHERE id = p_role_id
+    ) THEN
+        RAISE EXCEPTION 'ROLE_NOT_FOUND';
+    END IF;
+
+    -- 2️⃣ check đang có user dùng không
+    SELECT COUNT(*)
+    INTO v_count
+    FROM user_roles
+    WHERE role_id = p_role_id;
+
+    IF v_count > 0 THEN
+        RAISE EXCEPTION
+        'ROLE_IN_USE_CANNOT_DELETE';
+    END IF;
+
+    -- 3️⃣ delete
+    DELETE FROM roles
+    WHERE id = p_role_id;
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_get_roles()
+RETURNS TABLE(
+    id varchar,
+    role_name varchar,
+    description varchar
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT r.id, r.role_name, r.description
+    FROM roles r
+    ORDER BY r.role_name;
+END;
+$$;
+
+--v2
+CREATE OR REPLACE FUNCTION create_major(
+    p_id VARCHAR,
+    p_name VARCHAR,
+    p_description VARCHAR
+)
+RETURNS TABLE (
+    id VARCHAR,
+    name VARCHAR,
+    description VARCHAR,
+    created_at timestamptz
+)
+AS $$
+BEGIN
+    INSERT INTO major (id, name, description)
+    VALUES (p_id, p_name, p_description);
+
+    RETURN QUERY
+    SELECT m.id, m.name, m.description, m.created_at
+    FROM major m
+    WHERE m.id = p_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION update_major(
+    p_id VARCHAR,
+    p_name VARCHAR,
+    p_description VARCHAR
+)
+RETURNS TABLE (
+    id VARCHAR,
+    name VARCHAR,
+    description VARCHAR,
+    created_at timestamptz
+)
+AS $$
+BEGIN
+
+    IF NOT EXISTS (SELECT 1 FROM major m WHERE m.id = p_id) THEN
+        RAISE EXCEPTION 'Major not found';
+    END IF;
+
+    UPDATE major m
+    SET
+        name = coalesce(p_name, m.name),
+        description = coalesce(p_description, m.description)
+    WHERE m.id = p_id;
+
+    RETURN QUERY
+    SELECT m.id, m.name, m.description, m.created_at
+    FROM major m
+    WHERE m.id = p_id;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION delete_major(
+    p_id VARCHAR
+)
+RETURNS BOOLEAN
+AS $$
+BEGIN
+    DELETE FROM major
+    WHERE id = p_id;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION create_category(
+    p_id VARCHAR,
+    p_name VARCHAR,
+    p_slug VARCHAR,
+    p_description VARCHAR
+)
+RETURNS TABLE (
+    id VARCHAR,
+    name VARCHAR,
+    slug VARCHAR,
+    description VARCHAR,
+    created_at timestamptz
+)
+AS $$
+BEGIN
+    INSERT INTO categories (id, name, slug, description)
+    VALUES (p_id, p_name, p_slug, p_description);
+
+    RETURN QUERY
+    SELECT c.id, c.name, c.slug, c.description, c.created_at
+    FROM categories c
+    WHERE c.id = p_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION update_category(
+    p_id VARCHAR,
+    p_name VARCHAR,
+    p_slug VARCHAR,
+    p_description VARCHAR
+)
+RETURNS TABLE (
+    id VARCHAR,
+    name VARCHAR,
+    slug VARCHAR,
+    description VARCHAR,
+    created_at timestamptz
+)
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = p_id) THEN
+        RAISE EXCEPTION 'Category not found';
+    END IF;
+
+    UPDATE categories c
+    SET
+        name = COALESCE(p_name, c.name),
+        slug = COALESCE(p_slug, c.slug),
+        description = COALESCE(p_description, c.description)
+    WHERE c.id = p_id;
+
+    RETURN QUERY
+    SELECT c.id, c.name, c.slug, c.description, c.created_at
+    FROM categories c
+    WHERE c.id = p_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION delete_category(
+    p_id VARCHAR
+)
+RETURNS BOOLEAN
+AS $$
+BEGIN
+    DELETE FROM categories
+    WHERE id = p_id;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+
+--v3
+CREATE OR REPLACE FUNCTION fn_create_course(
+    p_id varchar,
+    p_title varchar,
+    p_slug varchar,
+    p_description text,
+    p_thumbnail_url text,
+    p_instructor_id varchar,
+    p_level varchar,
+    p_price numeric
+)
+RETURNS TABLE(
+    course_id varchar,
+    title varchar,
+    slug varchar
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    -- check slug unique
+    IF EXISTS (
+        SELECT 1 FROM courses c WHERE c.slug = p_slug
+    ) THEN
+        RAISE EXCEPTION 'COURSE_SLUG_EXISTS';
+    END IF;
+
+    INSERT INTO courses(
+        id,
+        title,
+        slug,
+        description,
+        thumbnail_url,
+        instructor_id,
+        level,
+        price,
+        status
+    )
+    VALUES(
+        p_id,
+        p_title,
+        p_slug,
+        p_description,
+        p_thumbnail_url,
+        p_instructor_id,
+        p_level,
+        p_price,
+        'draft'
+    );
+
+    RETURN QUERY
+    SELECT p_id, p_title, p_slug;
+
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION fn_update_course(
+    p_id varchar,
+    p_title varchar,
+    p_slug varchar,
+    p_description text,
+    p_thumbnail_url text,
+    p_level varchar,
+    p_price numeric
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    -- check tồn tại
+    IF NOT EXISTS (
+        SELECT 1 FROM courses c WHERE c.id = p_id
+    ) THEN
+        RAISE EXCEPTION 'COURSE_NOT_FOUND';
+    END IF;
+
+    -- check slug unique (trừ chính nó)
+    IF p_slug IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM courses c
+        WHERE c.slug = p_slug
+          AND c.id <> p_id
+    ) THEN
+        RAISE EXCEPTION 'COURSE_SLUG_EXISTS';
+    END IF;
+
+    UPDATE courses c
+    SET
+        title = COALESCE(p_title, c.title),
+        slug = COALESCE(p_slug, c.slug),
+        description = COALESCE(p_description, c.description),
+        thumbnail_url = COALESCE(p_thumbnail_url, c.thumbnail_url),
+        level = COALESCE(p_level, c.level),
+        price = COALESCE(p_price, c.price),
+        updated_at = now()
+    WHERE c.id = p_id;
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_publish_course(
+    p_course_id varchar
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    UPDATE courses
+    SET
+        status = 'published',
+        published_at = now()
+    WHERE id = p_course_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'COURSE_NOT_FOUND';
+    END IF;
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_archive_course(
+    p_course_id varchar
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    UPDATE courses
+    SET
+        status = 'archived'
+    WHERE id = p_course_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'COURSE_NOT_FOUND';
+    END IF;
+
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION fn_delete_course(
+    p_course_id varchar
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    DELETE FROM courses
+    WHERE id = p_course_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'COURSE_NOT_FOUND';
+    END IF;
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_get_major_list(
+    p_search text DEFAULT NULL,
+    p_page integer DEFAULT 1,
+    p_page_size integer DEFAULT 10
+)
+RETURNS json
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    result JSON;
+    total_count INTEGER;
+    offset_val INTEGER;
+BEGIN
+    offset_val := (p_page - 1) * p_page_size;
+
+    SELECT COUNT(*)
+    INTO total_count
+    FROM major m
+    WHERE (p_search IS NULL OR m.name ILIKE '%' || p_search || '%');
+
+    SELECT jsonb_build_object(
+        'data', COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'id', m.id,
+                    'name', m.name,
+                    'description', m.description,
+                    'created_at', m.created_at
+                )
+                ORDER BY m.created_at DESC
+            ),
+            '[]'::jsonb
+        ),
+        'pagination', jsonb_build_object(
+            'total', total_count,
+            'page', p_page,
+            'page_size', p_page_size,
+            'total_pages', CEIL(total_count::FLOAT / p_page_size)
+        )
+    )
+    INTO result
+    FROM (
+        SELECT *
+        FROM major m
+        WHERE (p_search IS NULL OR m.name ILIKE '%' || p_search || '%')
+        ORDER BY m.created_at DESC
+        LIMIT p_page_size
+        OFFSET offset_val
+    ) m;
+
+    RETURN result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_get_categories_list(
+    p_search text DEFAULT NULL,
+    p_page integer DEFAULT 1,
+    p_page_size integer DEFAULT 10
+)
+RETURNS json
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    result JSON;
+    total_count INTEGER;
+    offset_val INTEGER;
+BEGIN
+    offset_val := (p_page - 1) * p_page_size;
+
+    SELECT COUNT(*)
+    INTO total_count
+    FROM categories c
+    WHERE (p_search IS NULL OR c.name ILIKE '%' || p_search || '%');
+
+    SELECT jsonb_build_object(
+        'data', COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'id', c.id,
+                    'name', c.name,
+                    'slug', c.slug,
+                    'description', c.description,
+                    'created_at', c.created_at
+                )
+                ORDER BY c.created_at DESC
+            ),
+            '[]'::jsonb
+        ),
+        'pagination', jsonb_build_object(
+            'total', total_count,
+            'page', p_page,
+            'page_size', p_page_size,
+            'total_pages', CEIL(total_count::FLOAT / p_page_size)
+        )
+    )
+    INTO result
+    FROM (
+        SELECT *
+        FROM categories c
+        WHERE (p_search IS NULL OR c.name ILIKE '%' || p_search || '%')
+        ORDER BY c.created_at DESC
+        LIMIT p_page_size
+        OFFSET offset_val
+    ) c;
+
+    RETURN result;
+END;
+$$;
+
+
+--new v3
+CREATE OR REPLACE FUNCTION fn_get_profile(
+    p_user_id varchar
+)
+RETURNS TABLE (
+    id varchar,
+    email varchar,
+    first_name varchar,
+    last_name varchar,
+    avatar_url varchar,
+    roles text[],
+    permissions text[]
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        u.id,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.avatar_url,
+
+        -- roles
+        COALESCE(
+            array_agg(DISTINCT r.role_name)::text[],
+            '{}'::text[]
+        ),
+
+        -- permissions
+        COALESCE(
+            array_agg(DISTINCT p.permission_code)::text[],
+            '{}'::text[]
+        )
+
+    FROM users u
+    LEFT JOIN user_roles ur ON ur.user_id = u.id
+    LEFT JOIN roles r ON r.id = ur.role_id
+    LEFT JOIN role_permissions rp ON rp.role_id = r.id
+    LEFT JOIN permissions p ON p.id = rp.permission_id
+
+    WHERE u.id = p_user_id
+
+    GROUP BY u.id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_create_course(
+    p_id varchar,
+    p_title varchar,
+    p_slug varchar,
+    p_description text,
+    p_thumbnail_url text,
+    p_instructor_id varchar,
+    p_level varchar,
+    p_price numeric,
+    p_status varchar,
+    p_major_ids varchar[],
+    p_category_ids varchar[]
+)
+RETURNS TABLE (
+    id varchar,
+    title varchar,
+    slug varchar,
+    status varchar
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- 1. validate slug unique
+    IF EXISTS (SELECT 1 FROM courses c WHERE c.slug = p_slug) THEN
+        RAISE EXCEPTION 'Slug already exists';
+    END IF;
+
+    -- 2. validate major_ids
+    IF p_major_ids IS NOT NULL THEN
+        IF EXISTS (
+            SELECT 1
+            FROM unnest(p_major_ids) m_id
+            LEFT JOIN major m ON m.id = m_id
+            WHERE m.id IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Invalid major_id detected';
+        END IF;
+    END IF;
+
+    -- 3. validate category_ids
+    IF p_category_ids IS NOT NULL THEN
+        IF EXISTS (
+            SELECT 1
+            FROM unnest(p_category_ids) c_id
+            LEFT JOIN categories c ON c.id = c_id
+            WHERE c.id IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Invalid category_id detected';
+        END IF;
+    END IF;
+
+    -- 4. insert course
+    INSERT INTO courses (
+        id,
+        title,
+        slug,
+        description,
+        thumbnail_url,
+        instructor_id,
+        level,
+        price,
+        status,
+        duration,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        p_id,
+        p_title,
+        p_slug,
+        p_description,
+        p_thumbnail_url,
+        p_instructor_id,
+        p_level,
+        COALESCE(p_price, 0),
+        COALESCE(p_status, 'draft'),
+        0,
+        NOW(),
+        NOW()
+    );
+
+    -- 5. insert majors
+    IF p_major_ids IS NOT NULL THEN
+        INSERT INTO course_majors (course_id, major_id)
+        SELECT p_id, unnest(p_major_ids);
+    END IF;
+
+    -- 6. insert categories
+    IF p_category_ids IS NOT NULL THEN
+        INSERT INTO course_categories (course_id, category_id)
+        SELECT p_id, unnest(p_category_ids);
+    END IF;
+
+    -- 7. return course
+    RETURN QUERY
+    SELECT c.id, c.title, c.slug, c.status
+    FROM courses c
+    WHERE c.id = p_id;
+
+END;
+$$;
+
+select * from users;
+
+CREATE OR REPLACE FUNCTION fn_get_courses_list(
+    p_search text DEFAULT NULL,
+    p_status varchar DEFAULT NULL,
+    p_level varchar DEFAULT NULL,
+    p_major_ids varchar[] DEFAULT NULL,
+    p_category_ids varchar[] DEFAULT NULL,
+    p_page integer DEFAULT 1,
+    p_page_size integer DEFAULT 10,
+    p_user_id varchar DEFAULT NULL,     -- 👈 thêm
+    p_roles text[] DEFAULT NULL         -- 👈 thêm
+)
+RETURNS json
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    result JSON;
+    total_count INTEGER;
+    offset_val INTEGER;
+BEGIN
+    offset_val := (p_page - 1) * p_page_size;
+
+    -- COUNT
+    SELECT COUNT(*)
+    INTO total_count
+    FROM courses c
+    WHERE
+        (p_status IS NULL OR c.status = p_status)
+        AND (p_level IS NULL OR c.level = p_level)
+
+        -- 🔥 phân quyền
+        AND (
+            p_roles IS NULL
+            OR 'admin' = ANY(p_roles)
+            OR c.instructor_id = p_user_id
+        )
+
+        -- filter major
+        AND (
+            p_major_ids IS NULL
+            OR EXISTS (
+                SELECT 1
+                FROM course_majors cm
+                WHERE cm.course_id = c.id
+                  AND cm.major_id = ANY(p_major_ids)
+            )
+        )
+
+        -- filter category
+        AND (
+            p_category_ids IS NULL
+            OR EXISTS (
+                SELECT 1
+                FROM course_categories cc
+                WHERE cc.course_id = c.id
+                  AND cc.category_id = ANY(p_category_ids)
+            )
+        )
+
+        -- search
+        AND (
+            p_search IS NULL
+            OR c.title ILIKE '%' || p_search || '%'
+            OR EXISTS (
+                SELECT 1
+                FROM course_majors cm
+                JOIN major m ON m.id = cm.major_id
+                WHERE cm.course_id = c.id
+                  AND m.name ILIKE '%' || p_search || '%'
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM course_categories cc
+                JOIN categories cat ON cat.id = cc.category_id
+                WHERE cc.course_id = c.id
+                  AND cat.name ILIKE '%' || p_search || '%'
+            )
+        );
+
+    -- DATA
+    SELECT jsonb_build_object(
+        'data', COALESCE(
+            jsonb_agg(course_item ORDER BY course_item.created_at DESC),
+            '[]'::jsonb
+        ),
+        'pagination', jsonb_build_object(
+            'total', total_count,
+            'page', p_page,
+            'page_size', p_page_size,
+            'total_pages', CEIL(total_count::FLOAT / p_page_size)
+        )
+    )
+    INTO result
+    FROM (
+        SELECT
+            c.*,
+
+            jsonb_build_object(
+                'id', u.id,
+                'first_name', u.first_name,
+                'last_name', u.last_name,
+                'email', u.email
+            ) as instructor,
+
+            -- majors
+            (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', m.id,
+                        'name', m.name
+                    )
+                ), '[]'::jsonb)
+                FROM course_majors cm
+                JOIN major m ON m.id = cm.major_id
+                WHERE cm.course_id = c.id
+            ) as majors,
+
+            -- categories
+            (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', cat.id,
+                        'name', cat.name
+                    )
+                ), '[]'::jsonb)
+                FROM course_categories cc
+                JOIN categories cat ON cat.id = cc.category_id
+                WHERE cc.course_id = c.id
+            ) as categories
+
+        FROM courses c
+        LEFT JOIN users u ON u.id = c.instructor_id
+
+        WHERE
+            (p_status IS NULL OR c.status = p_status)
+            AND (p_level IS NULL OR c.level = p_level)
+
+            -- 🔥 phân quyền
+            AND (
+                p_roles IS NULL
+                OR 'admin' = ANY(p_roles)
+                OR c.instructor_id = p_user_id
+            )
+
+            AND (
+                p_major_ids IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM course_majors cm
+                    WHERE cm.course_id = c.id
+                      AND cm.major_id = ANY(p_major_ids)
+                )
+            )
+
+            AND (
+                p_category_ids IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM course_categories cc
+                    WHERE cc.course_id = c.id
+                      AND cc.category_id = ANY(p_category_ids)
+                )
+            )
+
+            AND (
+                p_search IS NULL
+                OR c.title ILIKE '%' || p_search || '%'
+                OR EXISTS (
+                    SELECT 1
+                    FROM course_majors cm
+                    JOIN major m ON m.id = cm.major_id
+                    WHERE cm.course_id = c.id
+                      AND m.name ILIKE '%' || p_search || '%'
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM course_categories cc
+                    JOIN categories cat ON cat.id = cc.category_id
+                    WHERE cc.course_id = c.id
+                      AND cat.name ILIKE '%' || p_search || '%'
+                )
+            )
+
+        ORDER BY c.created_at DESC
+        LIMIT p_page_size
+        OFFSET offset_val
+
+    ) course_item;
+
+    RETURN result;
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION fn_get_users_list(
+    p_search text DEFAULT NULL,
+    p_role text DEFAULT NULL, -- 👈 thêm filter role
+    p_page integer DEFAULT 1,
+    p_page_size integer DEFAULT 10
+)
+RETURNS json
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    result JSON;
+    total_count INTEGER;
+    offset_val INTEGER;
+BEGIN
+    offset_val := (p_page - 1) * p_page_size;
+
+    -- 1. COUNT
+    SELECT COUNT(*)
+    INTO total_count
+    FROM users u
+    WHERE
+        (
+            p_search IS NULL
+            OR u.email ILIKE '%' || p_search || '%'
+            OR u.first_name ILIKE '%' || p_search || '%'
+            OR u.last_name ILIKE '%' || p_search || '%'
+            OR (u.first_name || ' ' || u.last_name) ILIKE '%' || p_search || '%'
+        )
+        AND (
+            p_role IS NULL
+            OR EXISTS (
+                SELECT 1
+                FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = u.id
+                AND r.role_name ILIKE '%' || p_role || '%'
+            )
+        );
+
+    -- 2. DATA
+    SELECT jsonb_build_object(
+        'data', COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'id', u.id,
+                    'email', u.email,
+                    'first_name', u.first_name,
+                    'last_name', u.last_name,
+                    'avatar_url', u.avatar_url,
+                    'status', u.status,
+                    'email_verified', u.email_verified,
+                    'created_at', u.created_at,
+
+                    -- roles
+                    'roles', COALESCE((
+                        SELECT jsonb_agg(r.role_name)
+                        FROM user_roles ur
+                        JOIN roles r ON r.id = ur.role_id
+                        WHERE ur.user_id = u.id
+                    ), '[]'::jsonb)
+                )
+                ORDER BY u.created_at DESC
+            ),
+            '[]'::jsonb
+        ),
+        'pagination', jsonb_build_object(
+            'total', total_count,
+            'page', p_page,
+            'page_size', p_page_size,
+            'total_pages', CEIL(total_count::FLOAT / p_page_size)
+        )
+    )
+    INTO result
+    FROM (
+        SELECT *
+        FROM users u
+        WHERE
+            (
+                p_search IS NULL
+                OR u.email ILIKE '%' || p_search || '%'
+                OR u.first_name ILIKE '%' || p_search || '%'
+                OR u.last_name ILIKE '%' || p_search || '%'
+                OR (u.first_name || ' ' || u.last_name) ILIKE '%' || p_search || '%'
+            )
+            AND (
+                p_role IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM user_roles ur
+                    JOIN roles r ON r.id = ur.role_id
+                    WHERE ur.user_id = u.id
+                    AND r.role_name ILIKE '%' || p_role || '%'
+                )
+            )
+        ORDER BY u.created_at DESC
+        LIMIT p_page_size
+        OFFSET offset_val
+    ) u;
+
+    RETURN result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_upsert_section(
+    p_id VARCHAR(100),
+    p_course_id VARCHAR(100),
+    p_title VARCHAR(255),
+    p_position INT
+) RETURNS VOID AS $$
+BEGIN
+    INSERT INTO sections (id, course_id, title, position)
+    VALUES (p_id, p_course_id, p_title, p_position)
+    ON CONFLICT (id) DO UPDATE
+    SET title = EXCLUDED.title,
+        position = EXCLUDED.position;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_upsert_lesson(
+    p_id VARCHAR(100),
+    p_section_id VARCHAR(100),
+    p_title VARCHAR(255),
+    p_description VARCHAR(255),
+    p_lesson_type lesson_type,
+    p_position INT,
+    p_video_url TEXT DEFAULT NULL,
+    p_video_duration INT DEFAULT NULL,
+    p_content_json JSONB DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    INSERT INTO lessons (
+        id, section_id, title, description, lesson_type, position,
+        video_url, video_duration, content_json
+    )
+    VALUES (
+        p_id, p_section_id, p_title, p_description, p_lesson_type, p_position,
+        p_video_url, p_video_duration, p_content_json
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET title = EXCLUDED.title,
+        position = EXCLUDED.position,
+        description = EXCLUDED.description,
+        video_url = EXCLUDED.video_url,
+        video_duration = EXCLUDED.video_duration,
+        content_json = EXCLUDED.content_json;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_get_course_curriculum(p_course_id VARCHAR(100))
+RETURNS TABLE (curriculum JSONB) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        jsonb_build_object(
+            'course_id', c.id,
+            'course_title', c.title,
+            'sections', COALESCE(
+                (
+                    SELECT jsonb_agg(s_final ORDER BY s_final.position)
+                    FROM (
+                        SELECT
+                            s.id,
+                            s.title,
+                            s.position,
+                            COALESCE(
+                                (
+                                    SELECT jsonb_agg(l_final ORDER BY l_final.position)
+                                    FROM (
+                                        SELECT
+                                            l.id,
+                                            l.title,
+                                            l.description,
+                                            l.lesson_type AS "type",
+                                            l.position,
+                                            l.video_url,
+                                            l.video_duration,
+                                            l.content_json AS "content"
+                                        FROM lessons l
+                                        WHERE l.section_id = s.id
+                                    ) l_final
+                                ),
+                                '[]'::jsonb
+                            ) AS lessons
+                        FROM sections s
+                        WHERE s.course_id = p_course_id
+                    ) s_final
+                ),
+                '[]'::jsonb
+            )
+        )
+    FROM courses c
+    WHERE c.id = p_course_id;
+END;
+$$ LANGUAGE plpgsql;
