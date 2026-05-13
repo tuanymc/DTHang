@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Tạo CHƯƠNG 5: Kết luận và định hướng (Chuong5.docx)."""
+"""Tạo CHƯƠNG 5: Kết luận và định hướng → Chuong5_KetLuan_va_DinhHuong.docx (tránh trùng chuong5.docx trên Windows)."""
 from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 
-OUT = Path(__file__).resolve().parent.parent / "Chuong5.docx"
+# Trên FS không phân biệt hoa thường (Windows), trùng "chuong5.docx" của chương triển khai —
+# dùng tên riêng cho chương kết luận.
+OUT = Path(__file__).resolve().parent.parent / "Chuong5_KetLuan_va_DinhHuong.docx"
 
 
 def bullets(doc, items):
