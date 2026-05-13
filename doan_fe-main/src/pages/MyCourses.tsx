@@ -42,6 +42,7 @@ interface UiCourseRow {
   status: UiStatus;
   enrolledAt?: string | null;
   description?: string | null;
+  access_kind?: "trial" | "full" | null;
 }
 
 const MyCourses: React.FC = () => {
@@ -83,6 +84,10 @@ const MyCourses: React.FC = () => {
                 typeof e.enrolled_at === "string" ? e.enrolled_at : null,
             description:
                 typeof e.description === "string" ? e.description : null,
+            access_kind:
+                e.access_kind === "trial" || e.access_kind === "full" ?
+                    e.access_kind
+                :   null,
           };
         }).filter((r: UiCourseRow) => r.id);
 
@@ -159,16 +164,24 @@ const MyCourses: React.FC = () => {
           ]}
         >
           <div className="space-y-2">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start gap-2 flex-wrap">
               <Tag color="cyan" className="font-mono text-xs">
                 {course.code}
               </Tag>
-              <Tooltip title="Số tín chỉ (minh họa)">
-                <div className="flex items-center text-gray-500 text-sm">
-                  <CreditCardOutlined className="mr-1" />
-                  {course.credits} TC
-                </div>
-              </Tooltip>
+              <div className="flex flex-wrap gap-1 justify-end">
+                {course.access_kind === "trial" && (
+                  <Tag color="orange">Học thử</Tag>
+                )}
+                {course.access_kind === "full" && (
+                  <Tag color="green">Đầy đủ</Tag>
+                )}
+                <Tooltip title="Số tín chỉ (minh họa)">
+                  <div className="flex items-center text-gray-500 text-sm">
+                    <CreditCardOutlined className="mr-1" />
+                    {course.credits} TC
+                  </div>
+                </Tooltip>
+              </div>
             </div>
 
             <Title level={5} className="!mb-0 line-clamp-2 min-h-[56px]">

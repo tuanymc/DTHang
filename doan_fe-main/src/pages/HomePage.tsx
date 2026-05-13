@@ -5,6 +5,7 @@ import {
     Col,
     Typography,
     Button,
+    Space,
     Avatar,
     Rate,
     Divider,
@@ -19,10 +20,11 @@ import {
     HeartOutlined,
     LeftOutlined,
     RightOutlined,
+    ApartmentOutlined,
 } from "@ant-design/icons";
 import { useEffect, useRef } from "react";
 import { useCourseStore } from "../store/useCourseStore";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { normalizeMediaUrl } from "../utils/mediaUrl";
 
 const { Title, Text, Paragraph } = Typography;
@@ -174,13 +176,38 @@ const HomePage = () => {
                                 >
                                     {slide.description}
                                 </Paragraph>
-                                <Button
-                                    type="primary"
-                                    size="large"
-                                    className="mt-8 shadow-lg hover:scale-105 transition-transform"
+                                <Space
+                                    size="middle"
+                                    wrap
+                                    className="mt-8 justify-center"
                                 >
-                                    Khám phá ngay <ArrowRightOutlined />
-                                </Button>
+                                    <Button
+                                        type="primary"
+                                        size="large"
+                                        className="shadow-lg hover:scale-105 transition-transform"
+                                        onClick={() =>
+                                            document
+                                                .getElementById(
+                                                    "featured-courses",
+                                                )
+                                                ?.scrollIntoView({
+                                                    behavior: "smooth",
+                                                })
+                                        }
+                                    >
+                                        Khám phá khóa học{" "}
+                                        <ArrowRightOutlined />
+                                    </Button>
+                                    <Link to="/learning-paths">
+                                        <Button
+                                            size="large"
+                                            className="!bg-white/15 !border-white !text-white hover:!bg-white/25 hover:!text-white"
+                                            icon={<ApartmentOutlined />}
+                                        >
+                                            Lộ trình & combo
+                                        </Button>
+                                    </Link>
+                                </Space>
                             </div>
                         </div>
                     ))}
@@ -188,15 +215,23 @@ const HomePage = () => {
             </div>
 
             {/* Featured Courses - thêm tags, hover effect */}
-            <div className="max-w-7xl mx-auto px-4 py-20">
+            <div
+                id="featured-courses"
+                className="max-w-7xl mx-auto px-4 py-20"
+            >
                 <div className="text-center mb-14">
                     <Title level={2}>
                         <BookOutlined className="mr-2 text-blue-500" />
                         Khoá học nổi bật
                     </Title>
-                    <Text type="secondary" className="text-lg">
+                    <Text type="secondary" className="text-lg block mb-5">
                         Lựa chọn hàng đầu của sinh viên CNTT
                     </Text>
+                    <Link to="/learning-paths">
+                        <Button type="primary" ghost icon={<ApartmentOutlined />}>
+                            Xem combo theo lộ trình
+                        </Button>
+                    </Link>
                 </div>
                 <Row gutter={[28, 28]}>
                     {allPopularCourse?.map((raw) => {
@@ -285,9 +320,12 @@ const HomePage = () => {
                     })}
                 </Row>
                 <div className="text-center mt-12">
-                    <Button type="primary" size="large" shape="round">
-                        Xem tất cả khoá học (24+)
-                    </Button>
+                    <Link to="/courses">
+                        <Button type="primary" size="large" shape="round">
+                            Xem tất cả khóa học
+                            <ArrowRightOutlined className="ml-1" />
+                        </Button>
+                    </Link>
                 </div>
             </div>
 

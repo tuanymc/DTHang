@@ -271,15 +271,20 @@ export class CourseController {
 
     async getCurriculum(req: Request, res: Response): Promise<any> {
         try {
-            const { courseId } = req.body; // Lấy từ URL params
-
-            console.log(courseId);
-            
-            const data = await this.courseService.getCurriculum(courseId);
-
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const { courseId } = req.body;
+            if (!courseId) {
+                return res.status(400).json({ message: "Thiếu courseId" });
+            }
+            const data = await this.courseService.getCurriculumForUser(
+                user.sub,
+                courseId,
+            );
             return res.status(200).json({ curriculum: data });
         } catch (error: any) {
-            res.status(500).json({ message: error.message });
+            res.status(400).json({ message: error.message });
         }
     }
 
@@ -298,6 +303,39 @@ export class CourseController {
             });
         } catch (error: any) {
             res.status(401).json({ message: error.message });
+        }
+    }
+
+    async catalogPublished(req: Request, res: Response): Promise<any> {
+        try {
+            const body = req.body ?? {};
+            const {
+                search,
+                major_ids,
+                category_ids,
+                page,
+                page_size,
+                pageSize,
+            } = body;
+            const data = await this.courseService.catalogPublishedCourses({
+                search: typeof search === "string" ? search : undefined,
+                major_ids:
+                    Array.isArray(major_ids)
+                        ? (major_ids as string[])
+                        :   undefined,
+                category_ids:
+                    Array.isArray(category_ids)
+                        ? (category_ids as string[])
+                        :   undefined,
+                page,
+                page_size: page_size ?? pageSize,
+            });
+            return res.status(200).json({
+                message: "success",
+                data,
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
         }
     }
 
@@ -461,6 +499,125 @@ export class CourseController {
                 message: "success",
                 data: rows,
             });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async purchaseCourse(req: Request, res: Response): Promise<any> {
+        try {
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const { course_id } = req.body;
+            if (!course_id)
+                return res.status(400).json({ message: "Thiếu course_id" });
+            await this.courseService.purchaseCourse(user.sub, course_id);
+            return res.status(200).json({
+                message: "Thanh toán (demo) và ghi danh đầy đủ.",
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async startTrial(req: Request, res: Response): Promise<any> {
+        try {
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const { course_id } = req.body;
+            if (!course_id)
+                return res.status(400).json({ message: "Thiếu course_id" });
+            await this.courseService.startTrial(user.sub, course_id);
+            return res.status(200).json({
+                message: "Đã bật học thử các bài xem trước.",
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async purchaseLearningPath(req: Request, res: Response): Promise<any> {
+        try {
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const { path_id } = req.body;
+            if (!path_id)
+                return res.status(400).json({ message: "Thiếu path_id" });
+            await this.courseService.purchaseLearningPath(user.sub, path_id);
+            return res.status(200).json({
+                message:
+                    "Combo lộ trình: thanh toán (demo) và ghi danh các khóa trong gói.",
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async listLearningPaths(req: Request, res: Response): Promise<any> {
+        try {
+            const paths = await this.courseService.listPublishedLearningPaths();
+            return res.status(200).json({ message: "success", data: paths });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async getCourseReviews(req: Request, res: Response): Promise<any> {
+        try {
+            const { course_id, limit, offset } = req.body;
+            if (!course_id)
+                return res.status(400).json({ message: "Thiếu course_id" });
+            const agg =
+                await this.courseService.courseReviewAggregate(course_id);
+            const rows =
+                await this.courseService.listCourseReviews(
+                    course_id,
+                    limit,
+                    offset,
+                );
+            return res.status(200).json({
+                message: "success",
+                aggregate: agg,
+                data: rows,
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async submitCourseReview(req: Request, res: Response): Promise<any> {
+        try {
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const { course_id, rating, comment } = req.body;
+            if (!course_id)
+                return res.status(400).json({ message: "Thiếu course_id" });
+            await this.courseService.submitCourseReview({
+                userId: user.sub,
+                course_id,
+                rating,
+                comment,
+            });
+            return res.status(200).json({
+                message: "Đánh giá của bạn đã được ghi nhận.",
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    async myCertificates(req: Request, res: Response): Promise<any> {
+        try {
+            const user = (req as any).user;
+            if (!user?.sub)
+                return res.status(401).json({ message: "Unauthorized" });
+            const rows =
+                await this.courseService.myCertificates(user.sub);
+            return res.status(200).json({ message: "success", data: rows });
         } catch (error: any) {
             res.status(400).json({ message: error.message });
         }

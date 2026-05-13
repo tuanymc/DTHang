@@ -22,6 +22,9 @@ import {
     Timeline,
     Alert,
     message,
+    Form,
+    Modal,
+    Input,
 } from "antd";
 import {
     PlayCircleOutlined,
@@ -46,7 +49,7 @@ import {
 } from "@ant-design/icons";
 import { useCourseStore } from "../store/useCourseStore";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { courseService } from "../services/course.service";
+import { courseService, type EnrollmentMetaDto } from "../services/course.service";
 import { normalizeMediaUrl } from "../utils/mediaUrl";
 import { useAuthStore } from "../store/useAuthStore";
 
@@ -136,6 +139,26 @@ const CourseDetail: React.FC = () => {
 
     const [isEnrolled, setIsEnrolled] = useState(false);
     const [inWishlist, setInWishlist] = useState(false);
+    const [enrollMeta, setEnrollMeta] = useState<EnrollmentMetaDto | null>(
+        null,
+    );
+    const [reviewsList, setReviewsList] = useState<
+        {
+            id: string;
+            rating: number;
+            comment: string | null;
+            created_at: string;
+            first_name: string | null;
+            last_name: string | null;
+        }[]
+    >([]);
+    const [reviewsAgg, setReviewsAgg] = useState<{
+        avg_rating: number;
+        count: number;
+    }>({ avg_rating: 0, count: 0 });
+    const [reviewModalOpen, setReviewModalOpen] = useState(false);
+    const [reviewForm] = Form.useForm();
+    const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
     const [activeTab, setActiveTab] = useState("overview");
     const { courseDetail, getCourseDetail } = useCourseStore();
@@ -154,11 +177,14 @@ const CourseDetail: React.FC = () => {
             try {
                 const meta = await courseService.enrollmentStatus(course_id);
                 if (cancel) return;
+                setEnrollMeta(meta);
                 setIsEnrolled(Boolean(meta.enrolled));
                 setInWishlist(Boolean(meta.wishlisted));
             } catch {
-                if (!cancel)
+                if (!cancel) {
+                    setEnrollMeta(null);
                     setIsEnrolled(false);
+                }
             }
         })();
 
@@ -166,6 +192,32 @@ const CourseDetail: React.FC = () => {
             cancel = true;
         };
     }, [course_id, isAuthenticated]);
+
+    useEffect(() => {
+        if (!course_id) return;
+
+        let cancel = false;
+        (async () => {
+            try {
+                const rv = await courseService.getCourseReviews(course_id);
+                if (cancel) return;
+                setReviewsAgg(rv.aggregate ?? { avg_rating: 0, count: 0 });
+                setReviewsList(
+                    Array.isArray(rv.data) ?
+                        rv.data
+                    :   [],
+                );
+            } catch {
+                if (!cancel) {
+                    setReviewsAgg({ avg_rating: 0, count: 0 });
+                    setReviewsList([]);
+                }
+            }
+        })();
+        return () => {
+            cancel = true;
+        };
+    }, [course_id]);
 
     const handleEnroll = async () => {
         if (!course_id) return;
@@ -177,13 +229,95 @@ const CourseDetail: React.FC = () => {
 
         try {
             await courseService.enrollCourse(course_id);
-            setIsEnrolled(true);
+            const meta = await courseService.enrollmentStatus(course_id);
+            setEnrollMeta(meta);
+            setIsEnrolled(Boolean(meta.enrolled));
             message.success("Đăng ký khóa học thành công.");
         } catch (e: unknown) {
             const msg =
                 (e as { response?: { data?: { message?: string } } })
                     ?.response?.data?.message ?? "Ghi danh thất bại.";
             message.error(msg);
+        }
+    };
+
+    const handlePurchase = async () => {
+        if (!course_id) return;
+        if (!isAuthenticated) {
+            message.warning("Vui lòng đăng nhập để mua khóa học.");
+            navigate("/auth/login", { state: { from: location } });
+            return;
+        }
+        try {
+            await courseService.purchaseCourse(course_id);
+            const meta = await courseService.enrollmentStatus(course_id);
+            setEnrollMeta(meta);
+            setIsEnrolled(Boolean(meta.enrolled));
+            message.success("Mua khóa học thành công.");
+        } catch (e: unknown) {
+            const msg =
+                (e as { response?: { data?: { message?: string } } })
+                    ?.response?.data?.message ?? "Mua không thành công.";
+            message.error(msg);
+        }
+    };
+
+    const handleStartTrial = async () => {
+        if (!course_id) return;
+        if (!isAuthenticated) {
+            message.warning("Vui lòng đăng nhập để học thử.");
+            navigate("/auth/login", { state: { from: location } });
+            return;
+        }
+        try {
+            await courseService.startTrial(course_id);
+            const meta = await courseService.enrollmentStatus(course_id);
+            setEnrollMeta(meta);
+            setIsEnrolled(Boolean(meta.enrolled));
+            message.success("Đã kích hoạt học thử.");
+        } catch (e: unknown) {
+            const msg =
+                (e as { response?: { data?: { message?: string } } })
+                    ?.response?.data?.message ?? "Không thể học thử.";
+            message.error(msg);
+        }
+    };
+
+    const handleSubmitReview = async () => {
+        if (!course_id) return;
+        try {
+            const v = await reviewForm.validateFields();
+            setReviewSubmitting(true);
+            await courseService.submitCourseReview({
+                course_id,
+                rating: v.rating,
+                comment: v.comment?.trim() || undefined,
+            });
+            message.success("Đã gửi đánh giá.");
+            reviewForm.resetFields();
+            setReviewModalOpen(false);
+
+            const [rv, meta] = await Promise.all([
+                courseService.getCourseReviews(course_id),
+                courseService.enrollmentStatus(course_id),
+            ]);
+            setReviewsAgg(rv.aggregate ?? { avg_rating: 0, count: 0 });
+            setReviewsList(
+                Array.isArray(rv.data) ? rv.data : [],
+            );
+            setEnrollMeta(meta);
+            setIsEnrolled(Boolean(meta.enrolled));
+        } catch (e: unknown) {
+            const errFields = (
+                e as { errorFields?: unknown }
+            )?.errorFields;
+            if (errFields !== undefined && errFields !== null) return;
+            const msg =
+                (e as { response?: { data?: { message?: string } } })
+                    ?.response?.data?.message ?? "Gửi đánh giá thất bại.";
+            message.error(msg);
+        } finally {
+            setReviewSubmitting(false);
         }
     };
 
@@ -223,6 +357,23 @@ const CourseDetail: React.FC = () => {
 
     const cd = courseDetail as CourseDetailPayload;
 
+    const displayPrice =
+        enrollMeta?.price !== undefined && enrollMeta?.price !== null
+            ? Number(enrollMeta.price) || 0
+            : Number(cd.price) || 0;
+
+    const isFullAccess = enrollMeta?.access_kind === "full";
+    const isTrialAccess = enrollMeta?.access_kind === "trial";
+
+    const avgRatingDisplay =
+        reviewsAgg.count > 0 ?
+            Math.round(Number(reviewsAgg.avg_rating) * 10) / 10
+        :   cd.rating;
+    const reviewCountDisplay =
+        reviewsAgg.count > 0 ?
+            reviewsAgg.count
+        :   cd.totalReviews;
+
     const renderCourseInfoCard = () => (
         <Card className="sticky top-6 rounded-xl shadow-lg border-0 overflow-hidden">
             {/* Video Preview */}
@@ -243,50 +394,159 @@ const CourseDetail: React.FC = () => {
 
             {/* Course Info */}
             <div className="p-6">
+                {/* Access badges & progress */}
+                {isEnrolled && enrollMeta && (
+                    <div className="mb-4 space-y-2">
+                        {isTrialAccess && (
+                            <div>
+                                <Tag color="orange">Học thử — chỉ bài xem trước</Tag>
+                            </div>
+                        )}
+                        {isFullAccess && displayPrice > 0 && (
+                            <div>
+                                <Tag color="green">Đã mua đầy đủ</Tag>
+                            </div>
+                        )}
+                        {displayPrice <= 0 && isFullAccess && (
+                            <div>
+                                <Tag color="blue">Khóa miễn phí</Tag>
+                            </div>
+                        )}
+                        {typeof enrollMeta.progress_percent === "number" && (
+                            <div>
+                                <div className="flex justify-between text-sm text-gray-500 mb-1">
+                                    <span>Tiến độ</span>
+                                    <span>
+                                        {Math.round(
+                                            enrollMeta.progress_percent,
+                                        )}
+                                        %
+                                    </span>
+                                </div>
+                                <Progress
+                                    percent={Math.min(
+                                        100,
+                                        Math.round(enrollMeta.progress_percent),
+                                    )}
+                                    status="active"
+                                    showInfo={false}
+                                />
+                            </div>
+                        )}
+                        {enrollMeta.completed_at && (
+                            <Text type="success" className="!block text-sm">
+                                Đã hoàn thành:{" "}
+                                {new Date(
+                                    enrollMeta.completed_at,
+                                ).toLocaleString("vi-VN")}
+                            </Text>
+                        )}
+                    </div>
+                )}
+
                 {/* Price */}
                 <div className="mb-4">
-                    {cd.price === 0 ? (
+                    {displayPrice <= 0 ? (
                         <div className="flex items-center gap-2">
                             <Text className="text-3xl font-bold text-green-600">
-                                FREE
+                                MIỄN PHÍ
                             </Text>
-                            {cd.originalPrice && (
+                            {cd.originalPrice ? (
                                 <Text delete className="text-gray-400 text-lg">
                                     ${cd.originalPrice}
                                 </Text>
-                            )}
+                            ) : null}
                         </div>
                     ) : (
-                        <div className="flex items-center gap-2">
-                            <Text className="text-3xl font-bold">
-                                ${cd.price}
-                            </Text>
-                            {cd.originalPrice && (
-                                <Text delete className="text-gray-400 text-lg">
-                                    ${cd.originalPrice}
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                                <Text className="text-3xl font-bold">
+                                    ${displayPrice}
+                                </Text>
+                                {cd.originalPrice ?
+                                    <Text
+                                        delete
+                                        className="text-gray-400 text-lg"
+                                    >
+                                        ${cd.originalPrice}
+                                    </Text>
+                                :   null}
+                            </div>
+                            {enrollMeta?.allows_trial && !isEnrolled && (
+                                <Text type="secondary" className="text-sm">
+                                    Có học thử — xem các bài được đánh dấu
+                                    Preview.
                                 </Text>
                             )}
                         </div>
                     )}
                 </div>
 
-                {/* Enroll Button */}
-                <Button
-                    type="primary"
-                    size="large"
-                    block
-                    icon={
-                        isEnrolled ? (
-                            <CheckCircleOutlined />
-                        ) : (
-                            <ShoppingCartOutlined />
-                        )
-                    }
-                    onClick={handleEnroll}
-                    className="bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold mb-3"
-                >
-                    {isEnrolled ? "Đã ghi danh" : "Ghi danh học"}
-                </Button>
+                {/* Enroll / purchase / trial */}
+                {displayPrice <= 0 ?
+                    <Button
+                        type="primary"
+                        size="large"
+                        block
+                        icon={
+                            isEnrolled && isFullAccess ?
+                                <CheckCircleOutlined />
+                            :   <BookOutlined />
+                        }
+                        disabled={Boolean(isEnrolled && isFullAccess)}
+                        onClick={handleEnroll}
+                        className="bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold mb-3"
+                    >
+                        {isEnrolled && isFullAccess ?
+                            "Đã ghi danh"
+                        :   "Ghi danh học"}
+                    </Button>
+                : !isEnrolled ?
+                    <>
+                        <Button
+                            type="primary"
+                            size="large"
+                            block
+                            icon={<ShoppingCartOutlined />}
+                            onClick={handlePurchase}
+                            className="bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold mb-3"
+                        >
+                            Mua khóa học
+                        </Button>
+                        {enrollMeta?.allows_trial && (
+                            <Button
+                                size="large"
+                                block
+                                className="h-12 text-base mb-3"
+                                onClick={handleStartTrial}
+                            >
+                                Học thử
+                            </Button>
+                        )}
+                    </>
+                : isTrialAccess ?
+                    <>
+                        <Button
+                            type="primary"
+                            size="large"
+                            block
+                            icon={<ShoppingCartOutlined />}
+                            onClick={handlePurchase}
+                            className="bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold mb-3"
+                        >
+                            Mua để học đầy đủ
+                        </Button>
+                    </>
+                :   <Button
+                        size="large"
+                        block
+                        disabled
+                        icon={<CheckCircleOutlined />}
+                        className="h-12 text-base font-semibold mb-3"
+                    >
+                        Đã có quyền học đầy đủ
+                    </Button>
+                }
 
                 {isEnrolled && course_id && (
                     <Button
@@ -406,16 +666,18 @@ const CourseDetail: React.FC = () => {
                                     <Rate
                                         allowHalf
                                         disabled
-                                        defaultValue={cd.rating}
+                                        value={avgRatingDisplay}
                                         className="text-yellow-400 text-sm"
                                     />
                                     <Text className="text-yellow-400 font-semibold ml-1">
-                                        {cd.rating}
+                                        {avgRatingDisplay}
                                     </Text>
                                     <Text className="text-gray-300 ml-1">
                                         (
-                                        {cd.totalReviews.toLocaleString()}{" "}
-                                        ratings)
+                                        {Number(
+                                            reviewCountDisplay,
+                                        ).toLocaleString()}{" "}
+                                        đánh giá)
                                     </Text>
                                 </div>
                                 <div className="flex items-center gap-1 text-gray-300">
@@ -462,6 +724,9 @@ const CourseDetail: React.FC = () => {
             {/* Main Content */}
             <div className="max-w-7xl mx-auto px-4 py-8">
                 <Row gutter={[32, 32]}>
+                    <Col xs={24} className="lg:hidden mb-6">
+                        {renderCourseInfoCard()}
+                    </Col>
                     <Col xs={24} lg={16}>
                         {/* Tabs */}
                         <Tabs
@@ -939,87 +1204,114 @@ const CourseDetail: React.FC = () => {
                                 },
                                 {
                                     key: "reviews",
-                                    label: "Reviews",
+                                    label: "Đánh giá",
                                     children: (
                                         <Card
-                                            title="Student feedback"
+                                            title="Đánh giá học viên"
                                             className="rounded-xl"
+                                            extra={
+                                                isAuthenticated &&
+                                                isEnrolled &&
+                                                (isFullAccess ||
+                                                    displayPrice <= 0) ?
+                                                    <Button
+                                                        type="primary"
+                                                        icon={
+                                                            <StarOutlined />
+                                                        }
+                                                        onClick={() => {
+                                                            reviewForm.resetFields();
+                                                            setReviewModalOpen(
+                                                                true,
+                                                            );
+                                                        }}
+                                                    >
+                                                        Viết đánh giá
+                                                    </Button>
+                                                :   null
+                                            }
                                         >
                                             <div className="text-center mb-8">
                                                 <div className="flex items-center justify-center gap-2 mb-2">
                                                     <Rate
                                                         allowHalf
                                                         disabled
-                                                        defaultValue={
-                                                            cd.rating
+                                                        value={
+                                                            avgRatingDisplay
                                                         }
                                                         className="text-yellow-400 text-2xl"
                                                     />
                                                     <Text className="text-3xl font-bold">
-                                                        {cd.rating}
+                                                        {avgRatingDisplay}
                                                     </Text>
                                                 </div>
                                                 <Text type="secondary">
-                                                    Course rating •{" "}
-                                                    {cd.totalReviews.toLocaleString()}{" "}
-                                                    ratings
+                                                    {Number(
+                                                        reviewCountDisplay,
+                                                    ).toLocaleString()}{" "}
+                                                    đánh giá
                                                 </Text>
                                             </div>
 
-                                            {/* Progress bars for rating distribution */}
-                                            <div className="space-y-2 max-w-md mx-auto">
-                                                {[5, 4, 3, 2, 1].map((star) => (
-                                                    <div
-                                                        key={star}
-                                                        className="flex items-center gap-3"
-                                                    >
-                                                        <Text className="w-8 text-right">
-                                                            {star}
-                                                        </Text>
-                                                        <StarOutlined className="text-yellow-400" />
-                                                        <Progress
-                                                            percent={
-                                                                [
-                                                                    60, 25, 10,
-                                                                    3, 2,
-                                                                ][5 - star]
-                                                            }
-                                                            size="small"
-                                                            showInfo={false}
-                                                            className="flex-1"
-                                                            strokeColor="#faad14"
-                                                        />
-                                                        <Text
-                                                            type="secondary"
-                                                            className="w-12 text-right"
-                                                        >
-                                                            {
-                                                                [
-                                                                    60, 25, 10,
-                                                                    3, 2,
-                                                                ][5 - star]
-                                                            }
-                                                            %
-                                                        </Text>
-                                                    </div>
-                                                ))}
-                                            </div>
-
                                             <Divider />
-                                            <div className="text-center">
-                                                <Button icon={<StarOutlined />}>
-                                                    Write a review
-                                                </Button>
-                                            </div>
+                                            <List
+                                                dataSource={reviewsList}
+                                                locale={{
+                                                    emptyText:
+                                                        "Chưa có đánh giá nào.",
+                                                }}
+                                                renderItem={(item) => (
+                                                    <List.Item>
+                                                        <List.Item.Meta
+                                                            title={
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <Text strong>
+                                                                        {`${item.first_name ?? ""}${item.first_name || item.last_name ? " " : ""}${item.last_name ?? ""}`.trim() ||
+                                                                            "Học viên"}
+                                                                    </Text>
+                                                                    <Rate
+                                                                        disabled
+                                                                        value={
+                                                                            item.rating
+                                                                        }
+                                                                        className="text-yellow-400 text-sm"
+                                                                    />
+                                                                    <Text
+                                                                        type="secondary"
+                                                                        className="text-sm"
+                                                                    >
+                                                                        {new Date(
+                                                                            item.created_at,
+                                                                        ).toLocaleString(
+                                                                            "vi-VN",
+                                                                        )}
+                                                                    </Text>
+                                                                </div>
+                                                            }
+                                                            description={
+                                                                item.comment ?
+                                                                    item.comment
+                                                                :   (
+                                                                    <Text
+                                                                        type="secondary"
+                                                                        italic
+                                                                    >
+                                                                        (Không
+                                                                        có nhận
+                                                                        xét)
+                                                                    </Text>
+                                                                )
+                                                            }
+                                                        />
+                                                    </List.Item>
+                                                )}
+                                            />
                                         </Card>
                                     ),
                                 },
                             ]}
                         />
                     </Col>
-
-                    {/* Sticky Course Card - Mobile */}
-                    
                 </Row>
 
                 {/* Related Courses Section */}
@@ -1111,6 +1403,62 @@ const CourseDetail: React.FC = () => {
                         </Col>
                     ))}
                 </Row>
+
+                <Modal
+                    title="Viết đánh giá khóa học"
+                    open={reviewModalOpen}
+                    destroyOnClose
+                    onCancel={() => {
+                        setReviewModalOpen(false);
+                        reviewForm.resetFields();
+                    }}
+                    footer={[
+                        <Button
+                            key="cancel"
+                            onClick={() => {
+                                setReviewModalOpen(false);
+                                reviewForm.resetFields();
+                            }}
+                        >
+                            Huỷ
+                        </Button>,
+                        <Button
+                            key="submit"
+                            type="primary"
+                            loading={reviewSubmitting}
+                            onClick={() => handleSubmitReview()}
+                        >
+                            Gửi đánh giá
+                        </Button>,
+                    ]}
+                    forceRender
+                >
+                    <Form form={reviewForm} layout="vertical">
+                        <Form.Item
+                            name="rating"
+                            label="Điểm số"
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Chọn số sao đánh giá",
+                                },
+                            ]}
+                        >
+                            <Rate allowHalf />
+                        </Form.Item>
+                        <Form.Item
+                            name="comment"
+                            label="Nhận xét"
+                        >
+                            <Input.TextArea
+                                rows={4}
+                                placeholder="Tuỳ chọn — chia sẻ trải nghiệm của bạn."
+                                maxLength={2000}
+                                showCount
+                            />
+                        </Form.Item>
+                    </Form>
+                </Modal>
             </div>
         </div>
     );

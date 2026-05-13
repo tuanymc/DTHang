@@ -6,6 +6,7 @@ import {
     HomeOutlined,
     BookOutlined,
     CodeOutlined,
+    ApartmentOutlined,
     HeartOutlined,
     DatabaseOutlined,
     TeamOutlined,
@@ -55,6 +56,13 @@ const MainLayout = () => {
             key: "/",
             icon: <HomeOutlined />,
             label: <Link to="/">Trang chủ</Link>,
+        },
+        {
+            key: "/learning-paths",
+            icon: <ApartmentOutlined />,
+            label: (
+                <Link to="/learning-paths">Lộ trình / Combo</Link>
+            ),
         },
         ...learnerMenuExtras,
         // {
@@ -202,10 +210,10 @@ const MainLayout = () => {
                             <ul className="space-y-2">
                                 <li>
                                     <Link
-                                        to="/courses"
+                                        to="/learning-paths"
                                         className="text-gray-400 hover:text-white transition"
                                     >
-                                        Khóa học
+                                        Lộ trình / Combo
                                     </Link>
                                 </li>
                                 <li>

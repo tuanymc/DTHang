@@ -10,6 +10,10 @@ import { MinioService } from "./minio.service";
 import { EnrollmentRepository } from "../repositories/enrollmentRepository";
 import { WishlistRepository } from "../repositories/wishlistRepository";
 import { LessonProgressRepository } from "../repositories/lessonProgressRepository";
+import { PurchaseRepository } from "../repositories/purchaseRepository";
+import { LearningPathRepository } from "../repositories/learningPathRepository";
+import { ReviewRepository } from "../repositories/reviewRepository";
+import { CertificateRepository } from "../repositories/certificateRepository";
 
 @injectable()
 export class CourseService {
@@ -20,6 +24,10 @@ export class CourseService {
         private enrollmentRepository: EnrollmentRepository,
         private wishlistRepository: WishlistRepository,
         private lessonProgressRepository: LessonProgressRepository,
+        private purchaseRepository: PurchaseRepository,
+        private learningPathRepository: LearningPathRepository,
+        private reviewRepository: ReviewRepository,
+        private certificateRepository: CertificateRepository,
     ) {}
 
     async createCourse(course: any): Promise<any> {
@@ -197,6 +205,49 @@ export class CourseService {
         return await this.courseRepository.getCurriculum(courseId);
     }
 
+    private filterCurriculumTrialOnly(full: unknown): unknown {
+        if (!full || typeof full !== "object") return full;
+        const o = full as Record<string, unknown>;
+        const sections = o.sections;
+        if (!Array.isArray(sections)) return full;
+        return {
+            ...o,
+            sections: sections.map((s: Record<string, unknown>) => ({
+                ...s,
+                lessons: Array.isArray(s.lessons)
+                    ? (s.lessons as Record<string, unknown>[]).filter(
+                          (l) =>
+                              Boolean(
+                                  l.is_preview === true ||
+                                      l.is_preview === "true",
+                              ),
+                      )
+                    : [],
+            })),
+        };
+    }
+
+    async getCurriculumForUser(userId: string, courseId: string): Promise<any> {
+        const raw = await this.courseRepository.getCurriculum(courseId);
+        const canFull =
+            await this.enrollmentRepository.canViewFullCurriculum(
+                userId,
+                courseId,
+            );
+        if (canFull) return raw;
+        const acc = await this.enrollmentRepository.getAccessKind(
+            userId,
+            courseId,
+        );
+        if (!acc) {
+            throw new Error(
+                "Bạn chưa đăng ký khóa học (hoặc chưa đủ quyền xem curriculum).",
+            );
+        }
+        if (acc === "trial") return this.filterCurriculumTrialOnly(raw);
+        return raw;
+    }
+
     async getPopularCourse(limit: any): Promise<any> {
         const result = await this.courseRepository.getPopularCourse(limit);
 
@@ -204,6 +255,66 @@ export class CourseService {
             throw new Error("failed");
         }
         return result;
+    }
+
+    async catalogPublishedCourses(opts: {
+        search?: string | null;
+        major_ids?: string[] | null;
+        category_ids?: string[] | null;
+        page?: number;
+        page_size?: number;
+        pageSize?: number;
+    }): Promise<{
+        items: unknown[];
+        pagination: {
+            total: number;
+            page: number;
+            page_size: number;
+            total_pages: number;
+        };
+    }> {
+        const page = Math.max(1, Math.floor(Number(opts.page) || 1));
+        const page_size = Math.min(
+            100,
+            Math.max(
+                1,
+                Math.floor(
+                    Number(opts.page_size ?? opts.pageSize ?? 12) || 12,
+                ),
+            ),
+        );
+        const search =
+            typeof opts.search === "string" && opts.search.trim() !== ""
+                ? opts.search.trim()
+                : null;
+        const majors =
+            Array.isArray(opts.major_ids) && opts.major_ids.length > 0
+                ? opts.major_ids
+                : null;
+        const cats =
+            Array.isArray(opts.category_ids) &&
+            opts.category_ids.length > 0
+                ? opts.category_ids
+                : null;
+
+        const out = await this.courseRepository.listPublishedCoursesCatalog({
+            search,
+            major_ids: majors,
+            category_ids: cats,
+            page,
+            page_size,
+        });
+
+        const pg = out.pagination;
+        return {
+            items: Array.isArray(out.items) ? out.items : [],
+            pagination: {
+                total: Number(pg.total) || 0,
+                page: Number(pg.page) || page,
+                page_size: Number(pg.page_size) || page_size,
+                total_pages: Number(pg.total_pages) || 0,
+            },
+        };
     }
 
     async getCourseDetail(course: any): Promise<any> {
@@ -218,19 +329,160 @@ export class CourseService {
     }
 
     async enroll(userId: string, courseId: string): Promise<void> {
-        await this.enrollmentRepository.enroll(userId, courseId);
+        await this.enrollmentRepository.enrollFreePublished(userId, courseId);
+    }
+
+    async purchaseCourse(userId: string, courseId: string): Promise<void> {
+        const meta = await this.enrollmentRepository.getCoursePriceAndTrial(
+            courseId,
+        );
+        const paid = await this.purchaseRepository.hasPaidCoursePurchase(
+            userId,
+            courseId,
+        );
+        const price = Number(meta.price) || 0;
+        if (price <= 0) {
+            await this.enrollmentRepository.enrollFreePublished(
+                userId,
+                courseId,
+            );
+            return;
+        }
+        if (!paid) {
+            await this.purchaseRepository.recordPaidCoursePurchase(
+                userId,
+                courseId,
+                price,
+            );
+        }
+        await this.enrollmentRepository.enrollFull(userId, courseId);
+    }
+
+    async startTrial(userId: string, courseId: string): Promise<void> {
+        await this.enrollmentRepository.startTrial(userId, courseId);
+    }
+
+    async purchaseLearningPath(userId: string, pathId: string): Promise<void> {
+        const path =
+            await this.learningPathRepository.getPathBasics(pathId);
+        if (!path || path.status !== "published") {
+            throw new Error("Lộ trình không tồn tại hoặc chưa xuất bản.");
+        }
+        const courses =
+            await this.learningPathRepository.getCoursesInPath(pathId);
+        if (courses.length === 0)
+            throw new Error("Combo chưa có khóa học.");
+
+        const already =
+            await this.learningPathRepository.hasPaidPath(userId, pathId);
+        if (!already) {
+            await this.learningPathRepository.recordPaidPathPurchase(
+                userId,
+                pathId,
+                path.bundle_price,
+            );
+        }
+
+        for (const cid of courses) {
+            await this.enrollmentRepository.enrollFull(userId, cid, {
+                bypassPurchaseCheck: true,
+            });
+        }
+    }
+
+    async listPublishedLearningPaths() {
+        return await this.learningPathRepository.listPublished();
+    }
+
+    async myCertificates(userId: string) {
+        return await this.certificateRepository.listByUser(userId);
+    }
+
+    async courseReviewAggregate(courseId: string) {
+        return await this.reviewRepository.aggregateForCourse(courseId);
+    }
+
+    async listCourseReviews(courseId: string, limit?: number, offset?: number) {
+        const lim = Math.min(Number(limit ?? 12) || 12, 50);
+        const off = Math.max(Number(offset ?? 0) || 0, 0);
+        return await this.reviewRepository.listByCourse(courseId, lim, off);
+    }
+
+    async submitCourseReview(params: {
+        userId: string;
+        course_id: string;
+        rating: number;
+        comment?: string | null;
+    }): Promise<void> {
+        await this.enrollmentRepository.ensureEligibleForCourseReview(
+            params.userId,
+            params.course_id,
+        );
+        const rt = Number(params.rating);
+        if (Number.isNaN(rt) || rt < 1 || rt > 5) {
+            throw new Error("Điểm đánh giá từ 1 đến 5.");
+        }
+        await this.reviewRepository.upsertReview({
+            userId: params.userId,
+            courseId: params.course_id,
+            rating: Math.floor(rt),
+            comment:
+                typeof params.comment === "string"
+                    ? params.comment.slice(0, 4000)
+                    : null,
+        });
     }
 
     async myEnrollments(userId: string) {
         return await this.enrollmentRepository.listByUser(userId);
     }
 
-    async enrollmentStatus(userId: string | undefined | null, courseId: string) {
+    async enrollmentStatus(
+        userId: string | undefined | null,
+        courseId: string,
+    ) {
         const enrolled =
             await this.enrollmentRepository.isEnrolled(userId, courseId);
         const wishlisted =
             await this.wishlistRepository.isWishlisted(userId, courseId);
-        return { enrolled, wishlisted };
+        const meta =
+            await this.enrollmentRepository.getCoursePriceAndTrial(courseId);
+        const agg =
+            await this.reviewRepository.aggregateForCourse(courseId);
+        const access_kind =
+            userId ?
+                await this.enrollmentRepository.getAccessKind(userId, courseId)
+            :   null;
+        const has_purchase = userId
+            ? await this.purchaseRepository.hasPaidCoursePurchase(
+                  userId,
+                  courseId,
+              )
+            : false;
+
+        const snap =
+            userId ?
+                await this.enrollmentRepository.enrollmentSnapshot(
+                    userId,
+                    courseId,
+                )
+            :   null;
+
+        return {
+            enrolled,
+            wishlisted,
+            price: meta.price,
+            allows_trial: meta.allows_trial,
+            access_kind,
+            has_purchase,
+            avg_rating: agg.avg_rating,
+            reviews_count: agg.count,
+            progress_percent:
+                typeof snap?.progress_percent === "number"
+                    ? snap.progress_percent
+                :   0,
+            completed_at: snap?.completed_at ?? null,
+        };
     }
 
     async wishlistAdd(userId: string, courseId: string): Promise<void> {
@@ -264,6 +516,22 @@ export class CourseService {
             );
         if (!inCourse)
             throw new Error("Bài học không thuộc khóa học.");
+
+        const acc = await this.enrollmentRepository.getAccessKind(
+            userId,
+            courseId,
+        );
+        if (acc === "trial") {
+            const prev =
+                await this.lessonProgressRepository.lessonIsPreviewInCourse(
+                    lessonId,
+                    courseId,
+                );
+            if (!prev)
+                throw new Error(
+                    "Gói học thử chỉ xem các bài được đánh dấu học thử.",
+                );
+        }
     }
 
     async updateLessonProgress(

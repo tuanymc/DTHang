@@ -24,9 +24,10 @@ import {
     RocketOutlined,
     FireOutlined,
     ArrowRightOutlined,
+    SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { Link, useNavigate } from "react-router-dom";
-import { courseService } from "../services/course.service";
+import { courseService, type CertificateRowDto } from "../services/course.service";
 import { normalizeMediaUrl } from "../utils/mediaUrl";
 import { useAuthStore } from "../store/useAuthStore";
 
@@ -89,6 +90,9 @@ const DashboardPage: React.FC = () => {
     const [wishPeek, setWishPeek] = useState<WishPeek[]>([]);
     const [wishlistTotal, setWishlistTotal] = useState(0);
     const [suggested, setSuggested] = useState<FeaturedRow[]>([]);
+    const [certificates, setCertificates] = useState<CertificateRowDto[]>(
+        [],
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -111,11 +115,13 @@ const DashboardPage: React.FC = () => {
         (async () => {
             setLoading(true);
             try {
-                const [enrRes, wishRes, popular] = await Promise.all([
-                    courseService.myEnrollments(),
-                    courseService.myWishlist(),
-                    loadFeatured(),
-                ]);
+                const [enrRes, wishRes, popular, certRes] =
+                    await Promise.all([
+                        courseService.myEnrollments(),
+                        courseService.myWishlist(),
+                        loadFeatured(),
+                        courseService.myCertificates().catch(() => null),
+                    ]);
                 if (cancelled) return;
 
                 const enrPayload = (
@@ -148,10 +154,33 @@ const DashboardPage: React.FC = () => {
                     return id && !enrolledIds.has(id) && !wishIds.has(id);
                 });
 
+                const certPayload = (
+                    certRes?.data ?
+                        certRes.data
+                    :   []
+                ) as CertificateRowDto[];
+
+                const certList =
+                    Array.isArray(certPayload) ?
+                        [...certPayload]
+                            .sort(
+                                (a, b) =>
+                                    Number(
+                                        new Date(b.issued_at).getTime() || 0,
+                                    ) -
+                                    Number(
+                                        new Date(a.issued_at).getTime() ||
+                                            0,
+                                    ),
+                            )
+                            .slice(0, 6)
+                    :   [];
+
                 setEnrolled(enrollRows);
                 setWishlistTotal(wishMapped.length);
                 setWishPeek(wishMapped.slice(0, 8));
                 setSuggested(suggest.slice(0, 6));
+                setCertificates(certList);
             } catch {
                 if (!cancelled) {
                     message.error("Không tải được bảng điều khiển.");
@@ -159,6 +188,7 @@ const DashboardPage: React.FC = () => {
                     setWishlistTotal(0);
                     setWishPeek([]);
                     setSuggested([]);
+                    setCertificates([]);
                 }
             } finally {
                 if (!cancelled) setLoading(false);
@@ -512,6 +542,73 @@ const DashboardPage: React.FC = () => {
                                 </Link>
                             </>
                         )}
+                    </Card>
+
+                    <Card className="mb-6 rounded-2xl shadow-sm border-gray-100">
+                        <Title level={5} className="!mb-1">
+                            Chứng chỉ
+                        </Title>
+                        <Text type="secondary" className="text-sm">
+                            Được cấp khi hoàn thành khóa (đủ điều kiện)
+                        </Text>
+                        {certificates.length === 0 ?
+                            <Empty
+                                className="my-8"
+                                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                description="Chưa có chứng chỉ"
+                            />
+                        :   <List
+                                className="mt-4"
+                                dataSource={certificates}
+                                renderItem={(c) => (
+                                    <List.Item className="!px-0">
+                                        <List.Item.Meta
+                                            avatar={
+                                                <Avatar
+                                                    className="bg-emerald-500"
+                                                    icon={
+                                                        <SafetyCertificateOutlined />
+                                                    }
+                                                />
+                                            }
+                                            title={
+                                                <button
+                                                    type="button"
+                                                    className="text-left font-medium text-gray-900 hover:text-blue-600 bg-transparent border-0 p-0 cursor-pointer text-sm"
+                                                    onClick={() =>
+                                                        navigate(
+                                                            `/courses/${c.course_id}`,
+                                                        )
+                                                    }
+                                                >
+                                                    {c.title ||
+                                                        `Khóa ${c.course_id}`}
+                                                </button>
+                                            }
+                                            description={
+                                                <div className="text-xs text-gray-500">
+                                                    <div>
+                                                        Mã:{" "}
+                                                        <strong>
+                                                            {
+                                                                c.certificate_code
+                                                            }
+                                                        </strong>
+                                                    </div>
+                                                    <div>
+                                                        {new Date(
+                                                            c.issued_at,
+                                                        ).toLocaleString(
+                                                            "vi-VN",
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            }
+                                        />
+                                    </List.Item>
+                                )}
+                            />
+                        }
                     </Card>
 
                     <Card className="rounded-2xl border-dashed bg-slate-50/80 shadow-none">

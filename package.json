@@ -1,0 +1,11 @@
+{
+  "name": "dthang-lms-workspace",
+  "private": true,
+  "description": "Gốc mono-repo: frontend/backend trong thư con; migrate/seed chạy ở đây.",
+  "scripts": {
+    "db:migrate": "npm run db:migrate --prefix doan_be-main",
+    "db:seed": "npm run db:seed --prefix doan_be-main",
+    "be:start": "npm start --prefix doan_be-main",
+    "fe:dev": "npm run dev --prefix doan_fe-main"
+  }
+}

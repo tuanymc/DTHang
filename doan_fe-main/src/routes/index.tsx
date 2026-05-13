@@ -19,6 +19,8 @@ import CategoryManagement from "../pages/admin/CategoryManagement";
 import AdminProfile from "../pages/admin/AdminProfile";
 import CourseLearningPage from "../pages/LearningPage/CourseLearningPage";
 import MyCourses from "../pages/MyCourses";
+import LearningPaths from "../pages/LearningPaths";
+import CoursesCatalog from "../pages/CoursesCatalog";
 import CourseDetail from "../pages/CourseDetail";
 import Wishlist from "../pages/Wishlist";
 import Profile from "../pages/Profile";
@@ -136,6 +138,8 @@ export default function AppRoutes() {
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />
                     <Route path="/about" element={<AboutPage />} />
+                    <Route path="/learning-paths" element={<LearningPaths />} />
+                    <Route path="/courses" element={<CoursesCatalog />} />
 
                     <Route
                         path="/my-courses"

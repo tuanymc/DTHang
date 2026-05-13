@@ -17,6 +17,7 @@ Dự án gồm **backend REST API** (`doan_be-main`) và **SPA React** (`doan_fe
 
 ```
 DTHang/
+├── package.json           # (tuỳ chọn) ủy quyền db:migrate / db:seed vào doan_be-main
 ├── doan_be-main/          # Backend
 │   ├── database/migrations/
 │   ├── scripts/           # migrate-db.ts, seed-demo.ts
@@ -61,14 +62,23 @@ Tạo file `.env` trong **`doan_be-main`** (script migrate/seed đọc từ đâ
 
 ### Cơ sở dữ liệu
 
+Từ **`D:\DTHang`** (nếu đã có `package.json` gốc) hoặc từ **`doan_be-main`**:
+
 ```powershell
+# Cách 1 — từ gốc repo DTHang (sau khi npm install trong doan_be-main)
+cd D:\DTHang
+npm run db:migrate
+npm run db:seed
+
+# Cách 2 — trực tiếp backend
 cd doan_be-main
 npm run db:migrate
 npm run db:seed
 ```
 
-Seed có thể hỗ trợ purge / mật khẩu demo — xem `scripts/seed-demo.ts` và tài liệu trong repo.
+Migration `V021_seed_learning_paths_and_reviews.sql` chèn combo lộ trình + đánh giá mẫu **nếu** các khóa/tài khoản demo đã có; script seed (`npm run db:seed`) đọc cùng file đó sau khi chèn khóa demo để luôn có dữ liệu đúng thứ tự. Script seed còn thêm **5 khóa** chủ đề kỹ năng học, kỹ năng mềm, chuẩn bị nghề, định hướng nghề, kỹ năng số & AI (đều `published`, giá 0). Seed có thể `--purge`/mật khẩu demo — xem `scripts/seed-demo.ts`.
 
+Migration `V022_fn_list_published_courses_catalog.sql` thêm hàm SQL `fn_list_published_courses` phục vụ API công khai **`POST /course/catalog-published`** (phân trang danh khóa `published`).
 ### Chạy server
 
 ```powershell

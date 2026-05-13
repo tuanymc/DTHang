@@ -204,6 +204,74 @@ const getPopularCourse = async (
     }
 };
 
+export type CatalogPublishedPaginationDto = {
+    total: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+};
+
+export type CatalogPublishedData = {
+    items: unknown[];
+    pagination: CatalogPublishedPaginationDto;
+};
+
+const catalogPublished = async (params: {
+    search?: string;
+    major_ids?: string[];
+    category_ids?: string[];
+    page?: number;
+    page_size?: number;
+    pageSize?: number;
+}): Promise<CatalogPublishedData> => {
+    const response = await apiClient.post("/course/catalog-published", {
+        search:
+            typeof params.search === "string"
+                ? params.search.trim()
+                : undefined,
+        major_ids:
+            params.major_ids && params.major_ids.length > 0
+                ? params.major_ids
+                : undefined,
+        category_ids:
+            params.category_ids && params.category_ids.length > 0
+                ? params.category_ids
+                : undefined,
+        page: params.page ?? 1,
+        page_size: params.page_size ?? params.pageSize ?? 12,
+    });
+    const body = response.data as {
+        data?: CatalogPublishedData;
+        message?: string;
+    };
+    const d = body.data;
+    const pg = params.page ?? 1;
+    const ps = Math.min(
+        100,
+        Math.max(1, params.page_size ?? params.pageSize ?? 12),
+    );
+    if (!d) {
+        return {
+            items: [],
+            pagination: {
+                total: 0,
+                page: pg,
+                page_size: ps,
+                total_pages: 0,
+            },
+        };
+    }
+    return {
+        items: Array.isArray(d.items) ? d.items : [],
+        pagination: {
+            total: Number(d.pagination?.total) || 0,
+            page: Number(d.pagination?.page) || pg,
+            page_size: Number(d.pagination?.page_size) || ps,
+            total_pages: Number(d.pagination?.total_pages) || 0,
+        },
+    };
+};
+
 const getCourseDetail = async (params: { course_id: string }): Promise<any> => {
     try {
         const response = await apiClient.post("/course/course-detail", params);
@@ -219,6 +287,97 @@ const enrollCourse = async (course_id: string): Promise<any> => {
     return res.data;
 };
 
+export type EnrollmentMetaDto = {
+    enrolled: boolean;
+    wishlisted: boolean;
+    price?: number;
+    allows_trial?: boolean;
+    access_kind?: "trial" | "full" | null;
+    has_purchase?: boolean;
+    avg_rating?: number;
+    reviews_count?: number;
+    progress_percent?: number;
+    completed_at?: string | null;
+};
+
+const purchaseCourse = async (course_id: string): Promise<any> => {
+    const res = await apiClient.post("/course/purchase-course", { course_id });
+    return res.data;
+};
+
+const startTrial = async (course_id: string): Promise<any> => {
+    const res = await apiClient.post("/course/start-trial", { course_id });
+    return res.data;
+};
+
+const purchaseBundle = async (path_id: string): Promise<any> => {
+    const res = await apiClient.post("/course/purchase-bundle", { path_id });
+    return res.data;
+};
+
+export type LearningPathDto = {
+    id: string;
+    title: string;
+    slug: string | null;
+    description: string | null;
+    audience_tag: string | null;
+    bundle_price: number;
+    status: string;
+    course_ids: string[];
+};
+
+const listLearningPaths = async (): Promise<LearningPathDto[]> => {
+    const res = await apiClient.post("/course/list-learning-paths", {});
+    const raw = res.data?.data ?? res.data ?? [];
+    return Array.isArray(raw) ?
+            (raw as LearningPathDto[])
+        :   [];
+};
+
+export type CourseReviewRowDto = {
+    id: string;
+    rating: number;
+    comment: string | null;
+    created_at: string;
+    first_name: string | null;
+    last_name: string | null;
+};
+
+const getCourseReviews = async (
+    course_id: string,
+    limit?: number,
+    offset?: number,
+): Promise<{ aggregate?: { avg_rating: number; count: number }; data?: CourseReviewRowDto[] }> => {
+    const res = await apiClient.post("/course/course-reviews", {
+        course_id,
+        limit,
+        offset,
+    });
+    return res.data;
+};
+
+const submitCourseReview = async (payload: {
+    course_id: string;
+    rating: number;
+    comment?: string;
+}): Promise<any> => {
+    const res = await apiClient.post("/course/submit-review", payload);
+    return res.data;
+};
+
+export type CertificateRowDto = {
+    id: string;
+    course_id: string;
+    certificate_code: string;
+    issued_at: string;
+    title: string;
+};
+
+const myCertificates = async (): Promise<{ data?: CertificateRowDto[] }> => {
+    const res = await apiClient.post("/course/my-certificates", {});
+    return res.data;
+};
+
 const myEnrollments = async (): Promise<any> => {
     const res = await apiClient.post("/course/my-enrollments", {});
     return res.data;
@@ -226,11 +385,11 @@ const myEnrollments = async (): Promise<any> => {
 
 const enrollmentStatus = async (
     course_id: string,
-): Promise<{ enrolled: boolean; wishlisted: boolean }> => {
+): Promise<EnrollmentMetaDto> => {
     const res = await apiClient.post("/course/enrollment-status", {
         course_id,
     });
-    return res.data.data;
+    return res.data.data as EnrollmentMetaDto;
 };
 
 const wishlistAdd = async (course_id: string): Promise<any> => {
@@ -301,8 +460,16 @@ export const courseService = {
     syncCurriculum,
     getListCurriculums,
     getPopularCourse,
+    catalogPublished,
     getCourseDetail,
     enrollCourse,
+    purchaseCourse,
+    startTrial,
+    purchaseBundle,
+    listLearningPaths,
+    getCourseReviews,
+    submitCourseReview,
+    myCertificates,
     myEnrollments,
     enrollmentStatus,
     wishlistAdd,

@@ -29,6 +29,23 @@ export class LessonProgressRepository {
         return r.rows.length > 0;
     }
 
+    async lessonIsPreviewInCourse(
+        lessonId: string,
+        courseId: string,
+    ): Promise<boolean> {
+        const r = await this.db.query(
+            `
+            SELECT COALESCE(l.is_preview, FALSE) AS p
+            FROM lessons l
+            JOIN sections s ON s.id = l.section_id
+            WHERE l.id = $1 AND s.course_id = $2
+            LIMIT 1
+            `,
+            [lessonId, courseId],
+        );
+        return Boolean(r.rows[0]?.p);
+    }
+
     async upsertLessonProgress(
         userId: string,
         lessonId: string,

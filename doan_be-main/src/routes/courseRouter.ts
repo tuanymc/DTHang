@@ -61,6 +61,11 @@ courseRouter.post(
 );
 
 courseRouter.post(
+    "/catalog-published",
+    courseController.catalogPublished.bind(courseController),
+);
+
+courseRouter.post(
     "/get-popular-course",
     courseController.getPopularCourse.bind(courseController),
 );
@@ -128,6 +133,46 @@ courseRouter.post(
     "/my-lesson-progress",
     authMiddleware,
     courseController.myLessonProgress.bind(courseController),
+);
+
+courseRouter.post(
+    "/list-learning-paths",
+    courseController.listLearningPaths.bind(courseController),
+);
+
+courseRouter.post(
+    "/course-reviews",
+    courseController.getCourseReviews.bind(courseController),
+);
+
+courseRouter.post(
+    "/purchase-course",
+    authMiddleware,
+    courseController.purchaseCourse.bind(courseController),
+);
+
+courseRouter.post(
+    "/start-trial",
+    authMiddleware,
+    courseController.startTrial.bind(courseController),
+);
+
+courseRouter.post(
+    "/purchase-bundle",
+    authMiddleware,
+    courseController.purchaseLearningPath.bind(courseController),
+);
+
+courseRouter.post(
+    "/submit-review",
+    authMiddleware,
+    courseController.submitCourseReview.bind(courseController),
+);
+
+courseRouter.post(
+    "/my-certificates",
+    authMiddleware,
+    courseController.myCertificates.bind(courseController),
 );
 
 export default courseRouter;

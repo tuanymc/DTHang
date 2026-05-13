@@ -133,6 +133,70 @@ export class CourseRepository {
         }
     }
 
+    async listPublishedCoursesCatalog(params: {
+        search?: string | null;
+        major_ids?: string[] | null;
+        category_ids?: string[] | null;
+        page: number;
+        page_size: number;
+    }): Promise<{
+        items: unknown[];
+        pagination: {
+            total: number;
+            page: number;
+            page_size: number;
+            total_pages: number;
+        };
+    }> {
+        try {
+            const sql = `
+                SELECT fn_list_published_courses($1::text, $2::varchar[], $3::varchar[], $4::int, $5::int) AS catalog
+            `;
+
+            const result = await this.db.query(sql, [
+                params.search ?? null,
+                params.major_ids ?? null,
+                params.category_ids ?? null,
+                params.page,
+                params.page_size,
+            ]);
+
+            const raw = result.rows[0]?.catalog;
+            const parsed =
+                typeof raw === "string"
+                    ? (JSON.parse(raw) as {
+                          items?: unknown[];
+                          pagination?: {
+                              total: number;
+                              page: number;
+                              page_size: number;
+                              total_pages: number;
+                          };
+                      })
+                    :   (raw as {
+                          items?: unknown[];
+                          pagination?: {
+                              total: number;
+                              page: number;
+                              page_size: number;
+                              total_pages: number;
+                          };
+                      } | null);
+
+            const pagination = parsed?.pagination ?? {
+                total: 0,
+                page: params.page,
+                page_size: params.page_size,
+                total_pages: 0,
+            };
+            const items = Array.isArray(parsed?.items) ? parsed!.items : [];
+
+            return { items, pagination };
+        } catch (error: any) {
+            throw new Error(error.message);
+        }
+    }
+
     // Thêm vào CourseRepository.ts
     async syncCurriculum(courseId: string, sections: any[]): Promise<string[]> {
         // Chúng ta cần truy cập trực tiếp vào pool để làm Transaction
